@@ -25,9 +25,6 @@ export async function POST(req: Request) {
     });
   }
 
-  account.sold = true;
-  fs.writeFileSync(filePath, JSON.stringify(accounts, null, 2));
-
   return NextResponse.json({
     success: true,
     message: "Đã cấp tài khoản",
