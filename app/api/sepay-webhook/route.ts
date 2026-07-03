@@ -1,36 +1,90 @@
 import { NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
 
-type Account = {
-  username: string;
-  password: string;
-  sold: boolean;
+type SePayBody = {
+  transferAmount?: number;
+  amount?: number;
+  referenceCode?: string;
+  id?: string | number;
 };
 
 export async function POST(req: Request) {
-  const body = await req.json();
-  console.log("SePay webhook:", body);
+  try {
+    const body: SePayBody = await req.json();
+    console.log("SePay webhook:", body);
 
-  const filePath = path.join(process.cwd(), "data", "accounts.json");
-  const raw = fs.readFileSync(filePath, "utf-8");
-  const accounts: Account[] = JSON.parse(raw);
+    const amount = Number(body.transferAmount || body.amount || 0);
 
-  const account = accounts.find((acc) => acc.sold === false);
+    let productId = 0;
 
-  if (!account) {
+    if (amount >= 50000) {
+      productId = 1; // 30 ngày
+    } else if (amount >= 10000) {
+      productId = 0; // 7 ngày
+    } else {
+      return NextResponse.json({
+        success: false,
+        message: "Số tiền không hợp lệ",
+        amount,
+      });
+    }
+
+    const shopOrderId = String(
+      body.referenceCode || body.id || `SEPAY-${Date.now()}`
+    );
+
+    const orderRes = await fetch(
+      "https://nasnabisupermarket.com/nasnabi-bot/orders",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key": process.env.NASNABI_API_KEY || "",
+        },
+        body: JSON.stringify({
+          productId,
+          qty: 1,
+          shopOrderId,
+        }),
+      }
+    );
+
+    const orderData = await orderRes.json();
+
+    if (!orderRes.ok || !orderData.ok) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Nasnabi tạo đơn lỗi",
+          nasnabi: orderData,
+        },
+        { status: 200 }
+      );
+    }
+
+    const rawAccount = orderData.order?.accounts?.[0] || "";
+    const [username, password] = rawAccount.split("|");
+
     return NextResponse.json({
-      success: false,
-      message: "Hết tài khoản",
+      success: true,
+      message: "Đã cấp tài khoản",
+      amount,
+      productId,
+      orderCode: orderData.order?.orderCode,
+      account: {
+        username,
+        password,
+        raw: rawAccount,
+      },
     });
-  }
+  } catch (error) {
+    console.error("Webhook error:", error);
 
-  return NextResponse.json({
-    success: true,
-    message: "Đã cấp tài khoản",
-    account: {
-      username: account.username,
-      password: account.password,
-    },
-  });
+    return NextResponse.json(
+      {
+        success: false,
+        message: "Lỗi server webhook",
+      },
+      { status: 200 }
+    );
+  }
 }
