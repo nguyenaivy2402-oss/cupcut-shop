@@ -1,31 +1,42 @@
 import { supabase } from "@/lib/supabase";
 import { NextResponse } from "next/server";
 
+export async function GET() {
+  return NextResponse.json({ ok: true, message: "Webhook alive" });
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+    console.log("SEPAY BODY:", JSON.stringify(body));
 
-    const amount = Number(body.transferAmount || body.amount || 0);
-    const content = String(
-      body.content ||
-        body.description ||
-        body.transferContent ||
-        body.referenceCode ||
-        ""
+    const amount = Number(
+      body.transferAmount || body.amount || body.money || body.value || 0
     );
 
-    const { data: orders } = await supabase
+    const content = Object.values(body).join(" ");
+    console.log("CONTENT:", content);
+    console.log("AMOUNT:", amount);
+
+    const { data: orders, error: findError } = await supabase
       .from("orders")
       .select("*")
       .eq("status", "pending");
 
+    if (findError) {
+      console.log("SUPABASE FIND ERROR:", findError);
+      return NextResponse.json({ success: false, error: findError.message });
+    }
+
     const order = orders?.find((o) => content.includes(o.order_code));
 
     if (!order) {
+      console.log("NO ORDER MATCH:", content);
       return NextResponse.json({ success: false, message: "Không tìm thấy đơn" });
     }
 
     if (amount < order.amount) {
+      console.log("WRONG AMOUNT:", amount, order.amount);
       return NextResponse.json({ success: false, message: "Sai số tiền" });
     }
 
@@ -45,21 +56,21 @@ export async function POST(req: Request) {
     });
 
     const data = await res.json();
+    console.log("NASNABI:", JSON.stringify(data));
 
-    const raw =
-      data?.order?.accounts?.[0] ||
-      data?.accounts?.[0] ||
-      data?.data?.accounts?.[0] ||
-      "";
+    const raw = data?.order?.accounts?.[0];
 
     if (!raw) {
-      return NextResponse.json({ success: false, message: "Nasnabi không trả tài khoản", data });
+      return NextResponse.json({
+        success: false,
+        message: "Nasnabi không trả tài khoản",
+        nasnabi: data,
+      });
     }
 
-    const [username, password] =
-      typeof raw === "string" ? raw.split("|") : [raw.username || raw.email, raw.password];
+    const [username, password] = String(raw).split("|");
 
-    await supabase
+    const { error: updateError } = await supabase
       .from("orders")
       .update({
         status: "paid",
@@ -68,8 +79,14 @@ export async function POST(req: Request) {
       })
       .eq("id", order.id);
 
+    if (updateError) {
+      console.log("UPDATE ERROR:", updateError);
+      return NextResponse.json({ success: false, error: updateError.message });
+    }
+
     return NextResponse.json({ success: true });
-  } catch {
+  } catch (error) {
+    console.log("WEBHOOK ERROR:", error);
     return NextResponse.json({ success: false, message: "Webhook lỗi" });
   }
 }
