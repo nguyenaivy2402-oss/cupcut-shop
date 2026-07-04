@@ -1,10 +1,8 @@
 import { supabase } from "@/lib/supabase";
 import { NextResponse } from "next/server";
 
-export async function POST(request: Request) {
-  const body = await request.json();
-
-  const { orderCode, amount } = body;
+export async function POST(req: Request) {
+  const { orderCode, amount } = await req.json();
 
   const { error } = await supabase.from("orders").insert({
     order_code: orderCode,
@@ -13,13 +11,8 @@ export async function POST(request: Request) {
   });
 
   if (error) {
-    return NextResponse.json({
-      success: false,
-      error: error.message,
-    });
+    return NextResponse.json({ success: false, error: error.message });
   }
 
-  return NextResponse.json({
-    success: true,
-  });
+  return NextResponse.json({ success: true });
 }

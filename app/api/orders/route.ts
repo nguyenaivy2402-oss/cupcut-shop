@@ -5,9 +5,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
 
-  if (!code) {
-    return NextResponse.json({ success: false });
-  }
+  if (!code) return NextResponse.json({ success: false });
 
   const { data: order } = await supabase
     .from("orders")
@@ -16,7 +14,7 @@ export async function GET(request: Request) {
     .eq("status", "paid")
     .single();
 
-  if (!order) {
+  if (!order?.account_username || !order?.account_password) {
     return NextResponse.json({ success: false });
   }
 
